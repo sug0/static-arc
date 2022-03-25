@@ -27,12 +27,9 @@ fn main() {
         data.insert("x".into(), 1);
         data.insert("y".into(), 2);
         data.insert("z".into(), 3);
-        println!("thang 1");
     });
 
-    println!("thang 2");
     let data = recover(main_ptr);
-    println!("thang 3");
 
     for (k, v) in data.iter() {
         println!("{}: {}", k, v);
