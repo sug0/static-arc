@@ -97,7 +97,7 @@ impl<T> Drop for StaticArc<T> {
         // SAFETY: this `StaticArc` has already been initialized
         let arc = unsafe { &*self.inner.as_ptr() };
 
-        if arc.counter.fetch_sub(1, Ordering::SeqCst) == 1 {
+        if arc.counter.fetch_sub(1, Ordering::Release) == 1 {
             // SAFETY: counter value reached 0, therefore
             // no more `StaticArc` instances are alive
             let _ = unsafe { Box::from_raw(self.inner.as_ptr()) };
