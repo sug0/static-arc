@@ -1,4 +1,5 @@
 use std::ptr::NonNull;
+use std::num::NonZeroUsize;
 use std::ops::{Deref, Drop};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::mem::{self, MaybeUninit, ManuallyDrop};
@@ -61,13 +62,19 @@ impl<T> StaticArc<T> {
     }
 
     #[inline]
-    pub fn live(&self) -> usize {
-        self.arc().counter.load(Ordering::SeqCst)
+    pub fn live(&self) -> NonZeroUsize {
+        let value = self.arc().counter.load(Ordering::SeqCst);
+
+        // SAFETY: if we own a reference to `StaticArc`, the value
+        // of the counter will always be greater than 0
+        unsafe {
+            NonZeroUsize::new_unchecked(value)
+        }
     }
 
     #[inline]
     pub fn try_as_ref_mut(&self) -> Option<&mut T> {
-        if self.live() == 1 {
+        if self.live().get() == 1 {
             Some(&mut self.arc().value)
         } else {
             None
