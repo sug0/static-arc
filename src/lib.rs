@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 use std::ops::{Deref, Drop};
-use std::mem::{MaybeUninit, ManuallyDrop};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::mem::{self, MaybeUninit, ManuallyDrop};
 
 #[derive(Debug)]
 pub struct StaticArc<T> {
@@ -10,19 +10,23 @@ pub struct StaticArc<T> {
 
 struct StaticArcInner<T> {
     counter: AtomicUsize,
-    value: T,
+    value: ManuallyDrop<T>,
 }
 
 unsafe impl<T> Send for StaticArc<T> {}
 
 impl<T> StaticArc<T> {
-    pub fn new<const N: usize>(value: T) -> Result<[Self; N], T> {
+    pub fn new<const N: usize>(value: T) -> Option<[Self; N]> {
+        Self::new_recover(value).ok()
+    }
+
+    pub fn new_recover<const N: usize>(value: T) -> Result<[Self; N], T> {
         if N < 1 {
             return Err(value);
         }
 
         let boxed = Box::new(StaticArcInner {
-            value,
+            value: ManuallyDrop::new(value),
             counter: AtomicUsize::new(N),
         });
 
@@ -60,7 +64,11 @@ impl<T> StaticArc<T> {
         }
     }
 
-    pub fn try_into_inner(self) -> Result<T, Self> {
+    pub fn try_into_inner(self) -> Option<T> {
+        self.try_into_inner_recover().ok()
+    }
+
+    pub fn try_into_inner_recover(self) -> Result<T, Self> {
         match self.try_as_ref_mut() {
             Some(value) => {
                 // SAFETY: a single instance remains, so
@@ -71,8 +79,8 @@ impl<T> StaticArc<T> {
 
                 // manually drop, to make this process a bit more
                 // efficient (no need to perform more atomic ops)
-                let arc = ManuallyDrop::new(self);
-                let _ = unsafe { Box::from_raw(arc.inner.as_ptr()) };
+                let _ = unsafe { Box::from_raw(self.inner.as_ptr()) };
+                mem::forget(self);
 
                 Ok(value)
             },
@@ -97,10 +105,16 @@ impl<T> Drop for StaticArc<T> {
         // SAFETY: this `StaticArc` has already been initialized
         let arc = unsafe { &*self.inner.as_ptr() };
 
-        if arc.counter.fetch_sub(1, Ordering::Release) == 1 {
+        if arc.counter.fetch_sub(1, Ordering::SeqCst) == 1 {
             // SAFETY: counter value reached 0, therefore
             // no more `StaticArc` instances are alive
-            let _ = unsafe { Box::from_raw(self.inner.as_ptr()) };
+            unsafe {
+                // drop value
+                ManuallyDrop::drop(&mut self.inner.as_mut().value);
+
+                // drop box allocation
+                let _ = Box::from_raw(self.inner.as_ptr());
+            }
         }
     }
 }
