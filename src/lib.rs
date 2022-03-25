@@ -16,6 +16,7 @@ struct StaticArcInner<T> {
 unsafe impl<T> Send for StaticArc<T> {}
 
 impl<T> StaticArc<T> {
+    #[inline]
     pub fn new<const N: usize>(value: T) -> Option<[Self; N]> {
         Self::new_recover(value).ok()
     }
@@ -53,17 +54,27 @@ impl<T> StaticArc<T> {
         Ok(unsafe { array.assume_init() })
     }
 
-    pub fn try_as_ref_mut(&self) -> Option<&mut T> {
+    #[inline]
+    fn arc(&self) -> &mut StaticArcInner<T> {
         // SAFETY: this `StaticArc` has already been initialized
-        let arc = unsafe { &mut *self.inner.as_ptr() };
+        unsafe { &mut *self.inner.as_ptr() }
+    }
 
-        if arc.counter.load(Ordering::SeqCst) == 1 {
-            Some(&mut arc.value)
+    #[inline]
+    pub fn live(&self) -> usize {
+        self.arc().counter.load(Ordering::SeqCst)
+    }
+
+    #[inline]
+    pub fn try_as_ref_mut(&self) -> Option<&mut T> {
+        if self.live() == 1 {
+            Some(&mut self.arc().value)
         } else {
             None
         }
     }
 
+    #[inline]
     pub fn try_into_inner(self) -> Option<T> {
         self.try_into_inner_recover().ok()
     }
@@ -93,19 +104,13 @@ impl<T> Deref for StaticArc<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        // SAFETY: this `StaticArc` has already been initialized
-        let arc = unsafe { &*self.inner.as_ptr() };
-
-        &arc.value
+        &self.arc().value
     }
 }
 
 impl<T> Drop for StaticArc<T> {
     fn drop(&mut self) {
-        // SAFETY: this `StaticArc` has already been initialized
-        let arc = unsafe { &*self.inner.as_ptr() };
-
-        if arc.counter.fetch_sub(1, Ordering::SeqCst) == 1 {
+        if self.arc().counter.fetch_sub(1, Ordering::SeqCst) == 1 {
             // SAFETY: counter value reached 0, therefore
             // no more `StaticArc` instances are alive
             unsafe {
