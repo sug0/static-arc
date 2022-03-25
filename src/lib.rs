@@ -109,19 +109,23 @@ impl<T> Drop for StaticArc<T> {
 mod tests {
     use super::*;
 
-    use std::thread;
-    use std::time::Duration;
-
     #[test]
     fn test_ref_mut() {
         let [p1, p2, p3, p4] = StaticArc::new(1234).unwrap();
-        thread::spawn(move || {
+        std::thread::spawn(move || {
             drop((p2, p3));
         });
-        thread::sleep(Duration::from_secs(1));
         assert_eq!(*p4, 1234);
         drop(p4);
-        *p1.try_as_ref_mut().unwrap() = 420;
+        loop {
+            match p1.try_as_ref_mut() {
+                Some(p) => {
+                    *p = 420;
+                    break;
+                },
+                _ => (),
+            }
+        }
         let x = p1.try_into_inner().unwrap();
         assert_eq!(x, 420);
     }
