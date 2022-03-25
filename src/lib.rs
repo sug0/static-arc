@@ -77,7 +77,8 @@ impl<T> StaticArc<T> {
                     std::ptr::read(value as *const _)
                 };
 
-                // manually drop, since we want to keep the inner value
+                // SAFETY: manually drop `Box`, since we want to
+                // keep the inner value
                 let _ = unsafe { Box::from_raw(self.inner.as_ptr()) };
                 mem::forget(self);
 
