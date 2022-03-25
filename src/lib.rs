@@ -122,25 +122,26 @@ impl<T> Drop for StaticArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn test_ref_mut() {
-        let [p1, p2, p3, p4] = StaticArc::new(1234).unwrap();
+        let [p1, p2, p3, p4] = StaticArc::new(Mutex::new(1234)).unwrap();
         std::thread::spawn(move || {
             drop((p2, p3));
         });
-        assert_eq!(*p4, 1234);
+        assert_eq!(*p4.lock().unwrap(), 1234);
         drop(p4);
         loop {
             match p1.try_as_ref_mut() {
                 Some(p) => {
-                    *p = 420;
+                    *p.lock().unwrap() = 420;
                     break;
                 },
                 _ => (),
             }
         }
         let x = p1.try_into_inner().unwrap();
-        assert_eq!(x, 420);
+        assert_eq!(*x.lock().unwrap(), 420);
     }
 }
